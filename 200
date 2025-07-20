@@ -1,0 +1,160 @@
+local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local HumanModCons = {}
+local char = player.Character or player.CharacterAdded:Wait()
+local hum = char:WaitForChild("Humanoid")
+local hrp = char:WaitForChild("HumanoidRootPart")
+
+local function setWalkSpeed(speed)
+    if typeof(speed) == "number" then
+        local Char = player.Character or workspace:FindFirstChild(player.Name)
+        local Human = Char and Char:FindFirstChildWhichIsA("Humanoid")
+        local function WalkSpeedChange()
+            if Char and Human then
+                Human.WalkSpeed = speed
+            end
+        end
+        WalkSpeedChange()
+        if HumanModCons.wsLoop then
+            HumanModCons.wsLoop:Disconnect()
+            HumanModCons.wsLoop = nil
+        end
+        if HumanModCons.wsCA then
+            HumanModCons.wsCA:Disconnect()
+            HumanModCons.wsCA = nil
+        end
+        if Human then
+            HumanModCons.wsLoop = Human:GetPropertyChangedSignal("WalkSpeed"):Connect(WalkSpeedChange)
+        end
+        HumanModCons.wsCA = player.CharacterAdded:Connect(function(nChar)
+            Char, Human = nChar, nChar:WaitForChild("Humanoid")
+            WalkSpeedChange()
+            if HumanModCons.wsLoop then
+                HumanModCons.wsLoop:Disconnect()
+                HumanModCons.wsLoop = nil
+            end
+            HumanModCons.wsLoop = Human:GetPropertyChangedSignal("WalkSpeed"):Connect(WalkSpeedChange)
+        end)
+    end
+end
+
+setWalkSpeed(50)
+
+local function getDelivery(name)
+    local plots = workspace:FindFirstChild("Plots")
+    if not plots then return nil end
+    for _, plot in pairs(plots:GetChildren()) do
+        local sign = plot:FindFirstChild("PlotSign")
+        if sign then
+            local surfGui = sign:FindFirstChild("SurfaceGui")
+            if surfGui then
+                local frame = surfGui:FindFirstChild("Frame")
+                if frame then
+                    local label = frame:FindFirstChild("TextLabel")
+                    if label and string.find(string.lower(label.Text), string.lower(name)) then
+                        return plot:FindFirstChild("DeliveryHitbox"), plot
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function pathWalk(targetPos)
+    local path = PathfindingService:CreatePath()
+    path:ComputeAsync(hrp.Position, targetPos)
+    if path.Status ~= Enum.PathStatus.Success then return false end
+    local waypoints = path:GetWaypoints()
+    for _, wp in ipairs(waypoints) do
+        hum:MoveTo(wp.Position)
+        local reached = hum.MoveToFinished:Wait()
+        if not reached then return false end
+        task.wait(0.05)
+    end
+    return true
+end
+
+local function holdPrompt(pr)
+    if not pr or not pr.Enabled then return false end
+    pr:InputHoldBegin()
+    task.wait(pr.HoldDuration + 0.1)
+    pr:InputHoldEnd()
+    return true
+end
+
+local function main(targetName)
+    local ownDel, _ = getDelivery(player.Name)
+    while true do
+        local targetDel, targetPlot = getDelivery(targetName)
+        if not targetDel or not targetPlot or not ownDel then
+            task.wait(2)
+        else
+            pathWalk(targetDel.Position)
+            local pods = targetPlot:FindFirstChild("AnimalPodiums")
+            if pods then
+                for i = 1, 10 do
+                    local pod = pods:FindFirstChild(tostring(i))
+                    if pod then
+                        local claim = pod:FindFirstChild("Claim")
+                        local hitboxPart = claim and claim:FindFirstChild("Hitbox")
+                        if hitboxPart then
+                            local base = pod:FindFirstChild("Base")
+                            if base then
+                                local spawn = base:FindFirstChild("Spawn")
+                                if spawn then
+                                    local att = spawn:FindFirstChild("PromptAttachment")
+                                    if att then
+                                        local pr = att:FindFirstChildWhichIsA("ProximityPrompt")
+                                        if pr then
+                                            pathWalk(hitboxPart.Position)
+                                            holdPrompt(pr)
+                                            pathWalk(targetDel.Position)
+                                            pathWalk(ownDel.Position)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(1)
+        end
+    end
+end
+
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 320, 0, 140)
+frame.Position = UDim2.new(0.5, -160, 0.4, 0)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.Active = true
+frame.Draggable = true
+
+local box = Instance.new("TextBox", frame)
+box.Size = UDim2.new(1, -20, 0, 50)
+box.Position = UDim2.new(0, 10, 0, 15)
+box.PlaceholderText = "Enter player name (partial allowed)"
+box.TextColor3 = Color3.new(1, 1, 1)
+box.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+box.TextScaled = true
+
+local btn = Instance.new("TextButton", frame)
+btn.Size = UDim2.new(1, -20, 0, 45)
+btn.Position = UDim2.new(0, 10, 0, 75)
+btn.BackgroundColor3 = Color3.fromRGB(0, 200, 80)
+btn.TextColor3 = Color3.new(1, 1, 1)
+btn.TextScaled = true
+btn.Text = "Start"
+
+btn.MouseButton1Click:Connect(function()
+    if box.Text ~= "" then
+        task.spawn(function()
+            main(box.Text)
+        end)
+    end
+end)
